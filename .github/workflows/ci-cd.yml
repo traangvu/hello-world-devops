@@ -1,69 +1,205 @@
-name: CI/CD - Build, Push, Terraform
+name: CI/CD - Build, Push, Deploy (and Terraform)
 
 on:
   push:
     branches: [ main ]
 
+# Prevent overlapping deploys to the same environment
+concurrency:
+  group: prod-deploy
+  cancel-in-progress: false
+
+permissions:
+  id-token: write     # required for OIDC
+  contents: read
+
 env:
   AWS_REGION: eu-north-1
+  ACCOUNT_ID: "628651171723"
+  ECR_REGISTRY: 628651171723.dkr.ecr.eu-north-1.amazonaws.com
+  ECR_REPO: hello-world-app
+  CLUSTER: hello-world-cluster
+  SERVICE: hello-world-service
   TF_WORKING_DIR: terraform
 
 jobs:
   build-and-push:
+    name: Build & Push image to ECR
     runs-on: ubuntu-latest
-    outputs:
-      registry: ${{ steps.login-ecr.outputs.registry }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+      - name: Configure AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws:iam::628651171723:role/github-actions-ecs-deployer
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v1
-
-      - name: Build, tag, push image
+      - name: Show GitHub context (branch/ref)
         run: |
-          REGISTRY=${{ steps.login-ecr.outputs.registry }}
-          REPO_NAME=${{ secrets.ECR_REPO_NAME }}
-          REPO=${REGISTRY}/${REPO_NAME}
-          docker build -t $REPO:latest app/
-          docker push $REPO:latest
-        env:
-          DOCKER_BUILDKIT: 1
+          echo "GITHUB_REPOSITORY=$GITHUB_REPOSITORY"
+          echo "GITHUB_REF=$GITHUB_REF"
+          echo "GITHUB_REF_NAME=$GITHUB_REF_NAME"
+          echo "GITHUB_EVENT_NAME=$GITHUB_EVENT_NAME"
 
-  terraform:
+      - name: Request identity
+        run: aws sts get-caller-identity
+
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build image
+        run: |
+          docker build -t $ECR_REPO:${{ github.sha }} app/
+
+      - name: Tag & push (latest and commit SHA)
+        run: |
+          docker tag $ECR_REPO:${{ github.sha }} $ECR_REGISTRY/$ECR_REPO:${{ github.sha }}
+          docker tag $ECR_REPO:${{ github.sha }} $ECR_REGISTRY/$ECR_REPO:latest
+          docker push $ECR_REGISTRY/$ECR_REPO:${{ github.sha }}
+          docker push $ECR_REGISTRY/$ECR_REPO:latest
+
+  deploy-ecs:
+    name: ECS Deploy (force new deployment using :latest)
     runs-on: ubuntu-latest
     needs: build-and-push
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+      - name: Configure AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws:iam::628651171723:role/github-actions-ecs-deployer
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Sanity check AWS access
+        run: |
+          aws sts get-caller-identity
+
+      - name: Force new ECS deployment
+        run: |
+          aws ecs update-service \
+            --cluster "$CLUSTER" \
+            --service "$SERVICE" \
+            --force-new-deployment \
+            --region "$AWS_REGION"
+
+      - name: Show service status
+        run: |
+          aws ecs describe-services \
+            --cluster "$CLUSTER" \
+            --services "$SERVICE" \
+            --region "$AWS_REGION" \
+            --query 'services[0].{running:runningCount,deployments:deployments[].status,taskDefinition:taskDefinition}'
+
+  # ---------------------------
+  # OPTIONAL: Terraform in CI
+  # Enable for CI to apply infra on each push
+  # Make sure TF backend is remote (S3 + DynamoDB) before enabling
+  # ---------------------------
+  terraform:
+    if: false  # <-- flip to `true` (or remove this line) to enable TF in CI
+    name: Terraform Plan & Apply
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::628651171723:role/github-actions-ecs-deployer
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
+        uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.5.5
+          terraform_version: 1.13.4
 
       - name: Terraform Init
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform init
+        run: terraform init -input=false
 
       - name: Terraform Plan
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform plan -out=tfplan
+        run: terraform plan -input=false -out=tfplan
 
-      - name: Terraform Apply
+      - name: Terraform Apply (main only)
         if: github.ref == 'refs/heads/main'
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform apply -auto-approve tfplan
+        run: terraform apply -input=false -auto-approve tfplan
+
+  # ---------------------------
+  # OPTIONAL: Immutable deploys (pin image by commit SHA)
+  # Use this INSTEAD of the "deploy-ecs" job if you want a new TD per commit.
+  # Requires role perms: ecs:RegisterTaskDefinition, iam:PassRole to the execution role.
+  # ---------------------------
+  deploy-ecs-immutable:
+    if: false  # <-- flip to `true` and disable `deploy-ecs` to use immutable strategy
+    name: ECS Deploy (register TD with commit SHA)
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    steps:
+      - name: Configure AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::628651171723:role/github-actions-ecs-deployer
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Get current Task Definition
+        id: td
+        run: |
+          TD_ARN=$(aws ecs describe-services \
+            --cluster "$CLUSTER" \
+            --services "$SERVICE" \
+            --region "$AWS_REGION" \
+            --query 'services[0].taskDefinition' --output text)
+          echo "td_arn=$TD_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Download TD and clean fields
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition "${{ steps.td.outputs.td_arn }}" \
+            --region "$AWS_REGION" \
+            --query 'taskDefinition' > td.json
+          jq 'del(.taskDefinitionArn,.requiresAttributes,.compatibilities,.revision,.status,.registeredAt,.registeredBy)' td.json > td.clean.json
+
+      - name: Patch image to commit SHA
+        run: |
+          IMG="$ECR_REGISTRY/$ECR_REPO:${{ github.sha }}"
+          jq --arg IMG "$IMG" '
+            .containerDefinitions |= (map(.image = $IMG))
+          ' td.clean.json > td.pinned.json
+          cat td.pinned.json | jq '.containerDefinitions[].image'
+
+      - name: Register new Task Definition revision
+        id: register
+        run: |
+          NEW_TD_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://td.pinned.json \
+            --region "$AWS_REGION" \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "new_td_arn=$NEW_TD_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Update service to new TD
+        run: |
+          aws ecs update-service \
+            --cluster "$CLUSTER" \
+            --service "$SERVICE" \
+            --task-definition "${{ steps.register.outputs.new_td_arn }}" \
+            --region "$AWS_REGION"
+
+      - name: Show service status
+        run: |
+          aws ecs describe-services \
+            --cluster "$CLUSTER" \
+            --services "$SERVICE" \
+            --region "$AWS_REGION" \
+            --query 'services[0].{running:runningCount,deployments:deployments[].status,taskDefinition:taskDefinition}'
