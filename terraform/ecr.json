@@ -1,0 +1,15 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Effect": "Allow", "Action": ["ecr:GetAuthorizationToken"], "Resource": "*" },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ecr:BatchCheckLayerAvailability","ecr:CompleteLayerUpload","ecr:UploadLayerPart",
+            "ecr:InitiateLayerUpload","ecr:PutImage","ecr:BatchGetImage",
+            "ecr:DescribeRepositories","ecr:ListImages"
+      ],
+      "Resource": "arn:aws:ecr:eu-north-1:628651171723:repository/*"
+    }
+  ]
+}
