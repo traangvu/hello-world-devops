@@ -1,15 +1,31 @@
 {
   "Version": "2012-10-17",
   "Statement": [
-    { "Effect": "Allow", "Action": ["s3:ListBucket"], "Resource": "arn:aws:s3:::tf-state-628651171723-prod" },
     {
+      "Sid": "ListBucketScoped",
       "Effect": "Allow",
-      "Action": ["s3:GetObject","s3:PutObject","s3:DeleteObject"],
+      "Action": ["s3:ListBucket", "s3:GetBucketLocation"],
+      "Resource": "arn:aws:s3:::tf-state-628651171723-prod",
+      "Condition": {
+        "StringLike": { "s3:prefix": ["hello-world-devops/*"] }
+      }
+    },
+    {
+      "Sid": "CRUDStateObjects",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
       "Resource": "arn:aws:s3:::tf-state-628651171723-prod/hello-world-devops/*"
     },
     {
+      "Sid": "TerraformLockTable",
       "Effect": "Allow",
-      "Action": ["dynamodb:GetItem","dynamodb:PutItem","dynamodb:DeleteItem","dynamodb:DescribeTable"],
+      "Action": [
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:UpdateItem"
+      ],
       "Resource": "arn:aws:dynamodb:eu-north-1:628651171723:table/tf-locks"
     }
   ]
