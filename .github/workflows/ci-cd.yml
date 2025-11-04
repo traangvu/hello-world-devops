@@ -124,6 +124,10 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform init -input=false
 
+      - name: Show workspace
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform workspace show
+
       - name: Terraform Plan
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform plan -input=false -out=tfplan
@@ -135,11 +139,11 @@ jobs:
 
   # ---------------------------
   # OPTIONAL: Immutable deploys (pin image by commit SHA)
-  # Use this INSTEAD of the "deploy-ecs" job if you want a new TD per commit.
-  # Requires role perms: ecs:RegisterTaskDefinition, iam:PassRole to the execution role.
+  # Use this INSTEAD of the "deploy-ecs" job (if a new TD per commit is needed)
+  # Requires role perms: ecs:RegisterTaskDefinition, iam:PassRole to the execution role
   # ---------------------------
   deploy-ecs-immutable:
-    if: true  # <-- flip to `true` and disable `deploy-ecs` to use immutable strategy
+    if: false  # <-- flip to `true` and disable `deploy-ecs` to use immutable strategy
     name: ECS Deploy (register TD with commit SHA)
     runs-on: ubuntu-latest
     needs: build-and-push

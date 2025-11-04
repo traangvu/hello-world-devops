@@ -1,0 +1,28 @@
+{
+  "family": "grafana",
+  "requiresCompatibilities": ["FARGATE"],
+  "networkMode": "awsvpc",
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::628651171723:role/hello-obs-exec-role",
+  "containerDefinitions": [{
+    "name": "grafana",
+    "image": "grafana/grafana:latest",
+    "essential": true,
+    "portMappings": [{"containerPort": 3000, "hostPort": 3000, "protocol": "tcp"}],
+    "environment": [
+      {"name":"GF_SECURITY_ADMIN_USER","value":"admin"},
+      {"name":"GF_SECURITY_ADMIN_PASSWORD","value":"admin"},
+      {"name":"GF_SERVER_ROOT_URL","value":"%(protocol)s://hello-world-app-alb-1232746597.eu-north-1.elb.amazonaws.com/grafana"},
+      {"name":"GF_SERVER_SERVE_FROM_SUB_PATH","value":"true"}
+    ],
+    "logConfiguration": {
+      "logDriver": "awslogs",
+      "options": {
+        "awslogs-group": "/ecs/grafana",
+        "awslogs-region": "eu-north-1",
+        "awslogs-stream-prefix": "ecs"
+      }
+    }
+  }]
+}

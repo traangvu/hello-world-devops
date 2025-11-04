@@ -1,0 +1,14 @@
+{
+  "ImageRepository": {
+    "ImageIdentifier": "628651171723.dkr.ecr.eu-north-1.amazonaws.com/hello-world-app:latest",
+    "ImageRepositoryType": "ECR",
+    "ImageConfiguration": {
+      "Port": "8080",
+      "RuntimeEnvironmentVariables": { "PORT": "8080" }
+    }
+  },
+  "AutoDeploymentsEnabled": true,
+  "AuthenticationConfiguration": {
+    "AccessRoleArn": "arn:aws:iam::628651171723:role/AppRunnerECRAccessRole"
+  }
+}

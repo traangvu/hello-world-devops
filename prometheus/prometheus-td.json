@@ -1,0 +1,26 @@
+{
+  "family": "prometheus",
+  "requiresCompatibilities": ["FARGATE"],
+  "networkMode": "awsvpc",
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::628651171723:role/hello-obs-exec-role",
+  "containerDefinitions": [{
+    "name": "prometheus",
+    "image": "628651171723.dkr.ecr.eu-north-1.amazonaws.com/prometheus:hello-ecs",
+    "essential": true,
+    "portMappings": [{"containerPort": 9090, "hostPort": 9090, "protocol": "tcp"}],
+    "command": [
+      "--config.file=/etc/prometheus/prometheus.yml",
+      "--web.external-url=/prometheus"
+    ],
+    "logConfiguration": {
+      "logDriver": "awslogs",
+      "options": {
+        "awslogs-group": "/ecs/prometheus",
+        "awslogs-region": "eu-north-1",
+        "awslogs-stream-prefix": "ecs"
+      }
+    }
+  }]
+}

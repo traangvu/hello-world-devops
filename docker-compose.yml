@@ -1,19 +1,26 @@
-version: '3.8'
-
 services:
+  hello-world:
+    image: 628651171723.dkr.ecr.eu-north-1.amazonaws.com/hello-world-app:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+    restart: unless-stopped
+
   prometheus:
     image: prom/prometheus:latest
-    container_name: prometheus
     ports:
       - "9090:9090"
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
+    depends_on:
+      - hello-world
+    restart: unless-stopped
 
   grafana:
     image: grafana/grafana:latest
-    container_name: grafana
     ports:
       - "3000:3000"
     environment:
@@ -21,3 +28,4 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=admin
     depends_on:
       - prometheus
+    restart: unless-stopped

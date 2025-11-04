@@ -2,15 +2,32 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "DenyInsecureTransport",
-      "Effect": "Deny",
-      "Principal": "*",
-      "Action": "s3:*",
-      "Resource": [
-        "arn:aws:s3:::tf-state-628651171723-prod",
-        "arn:aws:s3:::tf-state-628651171723-prod/*"
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket",
+        "s3:GetBucketLocation"
       ],
-      "Condition": { "Bool": { "aws:SecureTransport": "false" } }
+      "Resource": "arn:aws:s3:::tf-state-628651171723-prod",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": [
+            "hello-world-devops/*",
+            "hello-world-ecs/*"
+          ]
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::tf-state-628651171723-prod/hello-world-devops/*",
+        "arn:aws:s3:::tf-state-628651171723-prod/hello-world-ecs/*"
+      ]
     }
   ]
 }
